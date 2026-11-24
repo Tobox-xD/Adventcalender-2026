@@ -962,42 +962,17 @@ body {
   }
 }
 
-/* Access gate */
-.access-gate {
-  background: var(--surface);
-  border: 2px solid var(--sketch-ink);
-  border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px;
-  padding: 1.5rem;
-  box-shadow: 2px 3px 0 rgba(0, 0, 0, 0.35);
+/* Plain fallback page when access is denied */
+.unregistered-page {
+  min-height: 100vh;
+  background: #ffffff;
+  color: #222222;
+  font-family: system-ui, -apple-system, sans-serif;
+  padding: 2rem;
 }
 
-.access-form {
-  display: flex;
-  gap: 0.5rem;
-  margin-top: 0.75rem;
-}
-
-.access-form input {
-  padding: 0.45rem 0.65rem;
-  border: 1.5px solid var(--sketch-ink);
-  border-radius: 12px 180px 10px 160px / 150px 10px 165px 12px;
-  font: inherit;
-  background: var(--surface-soft);
-  color: var(--ink);
-}
-
-.access-form button {
-  padding: 0.45rem 0.95rem;
-  border: 2px solid var(--pine-soft);
-  border-radius: 180px 12px 160px 12px / 12px 160px 12px 180px;
-  background: var(--pine-soft);
-  color: var(--bg);
-  font-family: system-ui, sans-serif;
-  cursor: pointer;
-}
-
-.error-text {
-  color: #e07a7a;
-  font-family: system-ui, sans-serif;
-  font-size: 0.9rem;
+.unregistered-page h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
 }

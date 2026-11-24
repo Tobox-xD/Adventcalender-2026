@@ -4,16 +4,14 @@ import StoryPath from './components/StoryPath.vue';
 import StoryView from './components/StoryView.vue';
 import { isDayUnlocked, loadStories } from './lib/stories.js';
 
-const STORAGE_KEY = 'advent-2026-access-key';
-const expectedKey = (import.meta.env.VITE_ACCESS_KEY || '').trim();
+const STORAGE_KEY = 'advent-2026-access-pw';
+const expectedPassword = (import.meta.env.VITE_ACCESS_PW || '').trim();
 
 const stories = loadStories();
 const selectedStory = ref(null);
 const lastVisitedDay = ref(null);
 const openedFromPath = ref(false);
-const hasAccess = ref(!expectedKey);
-const codeInput = ref('');
-const codeError = ref(false);
+const hasAccess = ref(!expectedPassword);
 
 function findUnlockedStoryByDay(day) {
   if (!Number.isInteger(day)) return null;
@@ -39,6 +37,7 @@ async function scrollToDayOnPath(day) {
 }
 
 function syncFromHistory(event) {
+  if (!hasAccess.value) return;
   const targetDay = event?.state?.day ?? getDayFromUrl();
   const story = findUnlockedStoryByDay(targetDay);
 
@@ -54,15 +53,41 @@ function syncFromHistory(event) {
   scrollToDayOnPath(returnDay);
 }
 
-function unlockWithKey(candidate) {
-  if (!expectedKey || candidate === expectedKey) {
+function checkAccess() {
+  if (!expectedPassword) {
     hasAccess.value = true;
-    codeError.value = false;
-    if (expectedKey) {
-      localStorage.setItem(STORAGE_KEY, candidate);
-    }
     return true;
   }
+
+  const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
+  if (pathname === '/start') {
+    const params = new URLSearchParams(window.location.search);
+    const pw = params.get('pw');
+    if (pw === expectedPassword) {
+      try {
+        localStorage.setItem(STORAGE_KEY, pw);
+      } catch {
+        // Ignore storage errors
+      }
+      hasAccess.value = true;
+      window.history.replaceState({}, '', '/');
+      return true;
+    }
+    hasAccess.value = false;
+    return false;
+  }
+
+  try {
+    const savedPw = localStorage.getItem(STORAGE_KEY);
+    if (savedPw === expectedPassword) {
+      hasAccess.value = true;
+      return true;
+    }
+  } catch {
+    // Ignore storage errors
+  }
+
+  hasAccess.value = false;
   return false;
 }
 
@@ -71,24 +96,10 @@ onMounted(() => {
     window.history.scrollRestoration = 'manual';
   }
 
-  if (expectedKey) {
-    const params = new URLSearchParams(window.location.search);
-    const queryKey = params.get('key');
-
-    if (queryKey && unlockWithKey(queryKey.trim())) {
-      params.delete('key');
-      const nextQuery = params.toString();
-      const cleanUrl =
-        window.location.pathname +
-        (nextQuery ? `?${nextQuery}` : '') +
-        window.location.hash;
-      window.history.replaceState(window.history.state, '', cleanUrl);
-    } else {
-      const savedKey = localStorage.getItem(STORAGE_KEY);
-      if (savedKey) {
-        unlockWithKey(savedKey);
-      }
-    }
+  const allowed = checkAccess();
+  if (!allowed) {
+    document.title = 'Domain unregistered';
+    return;
   }
 
   // Support direct link / refresh on #station-N
@@ -106,12 +117,6 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('popstate', syncFromHistory);
 });
-
-function submitCode() {
-  if (!unlockWithKey(codeInput.value.trim())) {
-    codeError.value = true;
-  }
-}
 
 function handleSelectStory(story) {
   if (!isDayUnlocked(story)) return;
@@ -141,36 +146,24 @@ function handleBackToPath() {
 </script>
 
 <template>
-  <main class="container">
+  <main v-if="!hasAccess" class="unregistered-page">
+    <h1>Domain unregistered</h1>
+  </main>
+
+  <main v-else class="container">
     <header class="page-header">
       <h1>Adventskalender 2026</h1>
     </header>
 
-    <section v-if="!hasAccess" class="access-gate">
-      <p>Diese Seite ist privat. Bitte öffne deinen persönlichen Link oder gib den Code ein.</p>
-      <form class="access-form" @submit.prevent="submitCode">
-        <input
-          v-model="codeInput"
-          type="password"
-          placeholder="Code"
-          autocomplete="off"
-        />
-        <button type="submit">Öffnen</button>
-      </form>
-      <p v-if="codeError" class="error-text">Ungültiger Code.</p>
-    </section>
-
-    <template v-else>
-      <StoryView
-        v-if="selectedStory"
-        :story="selectedStory"
-        @back="handleBackToPath"
-      />
-      <StoryPath
-        v-else
-        :stories="stories"
-        @select="handleSelectStory"
-      />
-    </template>
+    <StoryView
+      v-if="selectedStory"
+      :story="selectedStory"
+      @back="handleBackToPath"
+    />
+    <StoryPath
+      v-else
+      :stories="stories"
+      @select="handleSelectStory"
+    />
   </main>
 </template>
