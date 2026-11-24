@@ -122,6 +122,7 @@ const mainPathD = computed(() => buildSketchPath(0, 0));
       <li
         v-for="pt in points"
         :key="pt.story.day"
+        :data-day="pt.story.day"
         class="trail-stop"
         :class="[
           `card-${pt.side}`,
