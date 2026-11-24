@@ -1,0 +1,17 @@
+{
+	auto_https off
+}
+
+:80 {
+	root * /srv
+	encode gzip zstd
+
+	@assets path /assets/*
+	header @assets Cache-Control "public, max-age=31536000, immutable"
+
+	@no_cache not path /assets/*
+	header @no_cache Cache-Control "no-cache, no-store, must-revalidate"
+
+	try_files {path} /index.html
+	file_server
+}
