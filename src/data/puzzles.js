@@ -29,19 +29,15 @@ export function getBagPuzzleImageUrl() {
 }
 
 export const PUZZLE_CONFIG = {
-  // Station 1: 15x15 Word Search (forward horizontal, vertical, and diagonal)
+  // Station 1: 13x13 Word Search (forward horizontal, vertical, and diagonal)
   wordSearch: {
-    size: 15,
+    size: 13,
     seed: 20261201,
     words: [
       'Maubs',
       'Liebhabelung',
       'Kitzelattacke',
-      'Lieb',
-      'Winter',
-      'Schnee',
       'Kuscheln',
-      'Advent',
       'Freude',
       'Schnuffel',
     ],

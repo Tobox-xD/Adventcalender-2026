@@ -245,7 +245,11 @@ onBeforeUnmount(() => {
         class="ws-word-chip"
         :class="{ 'is-discovered': foundSet.has(placement.word) }"
       >
-        {{ foundSet.has(placement.word) ? placement.displayWord : `${placement.word.length} Buchstaben` }}
+        {{
+          foundSet.has(placement.word)
+            ? placement.displayWord
+            : `${placement.displayWord[0]}… (${placement.word.length} Buchstaben)`
+        }}
       </span>
     </div>
 

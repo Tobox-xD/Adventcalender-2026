@@ -302,7 +302,7 @@ onBeforeUnmount(() => {
 
     <div v-if="isAtGoal" class="puzzle-solved">
       Am großen Baum angekommen! Dein Lösungssatz:
-      <strong>{{ collectedLetters.join('') }}</strong>
+      <strong>{{ PUZZLE_CONFIG.maze.phrase }}</strong>
     </div>
 
     <div class="puzzle-actions">

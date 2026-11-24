@@ -1,4 +1,5 @@
-// Deterministic 15x15 forward-only (+ diagonal) word search generator
+// Deterministic forward-only (+ diagonal) word search generator
+// Guarantees zero overlapping cells between words and spreads words evenly across the grid.
 
 function createRng(seed) {
   let state = seed >>> 0;
@@ -24,7 +25,21 @@ export function normalizeWord(word) {
   return word.trim().toUpperCase().replace(/\s+/g, '');
 }
 
-export function generateWordSearch({ size = 15, words = [], seed = 20261201 }) {
+function measureSpreadScore(cells, occupiedCells) {
+  if (occupiedCells.length === 0) return 0;
+  let totalMinDist = 0;
+  for (const cell of cells) {
+    let minDist = Infinity;
+    for (const occ of occupiedCells) {
+      const d = Math.abs(cell.r - occ.r) + Math.abs(cell.c - occ.c);
+      if (d < minDist) minDist = d;
+    }
+    totalMinDist += minDist;
+  }
+  return totalMinDist / cells.length;
+}
+
+export function generateWordSearch({ size = 13, words = [], seed = 20261201 }) {
   const normalizedList = words
     .map((displayWord) => ({
       displayWord: displayWord.trim(),
@@ -32,13 +47,14 @@ export function generateWordSearch({ size = 15, words = [], seed = 20261201 }) {
     }))
     .filter((entry) => entry.word.length > 0 && entry.word.length <= size);
 
-  // Place longer words first for reliable packing
+  // Place longer words first for reliable non-overlapping packing
   const sorted = [...normalizedList].sort((a, b) => b.word.length - a.word.length);
 
-  for (let attempt = 0; attempt < 200; attempt += 1) {
+  for (let attempt = 0; attempt < 300; attempt += 1) {
     const rng = createRng(seed + attempt * 97);
     const grid = Array.from({ length: size }, () => Array(size).fill(''));
     const dirUsage = new Map(FORWARD_DIRECTIONS.map((d) => [d.name, 0]));
+    const occupiedCells = [];
     const placements = [];
     let failed = false;
 
@@ -52,29 +68,26 @@ export function generateWordSearch({ size = 15, words = [], seed = 20261201 }) {
             const endC = c + dir.dc * (entry.word.length - 1);
             if (endR < 0 || endR >= size || endC < 0 || endC >= size) continue;
 
+            // Strict zero-overlap check: every cell must be empty
             let fits = true;
-            let overlapCount = 0;
+            const cells = [];
             for (let i = 0; i < entry.word.length; i += 1) {
-              const cell = grid[r + dir.dr * i][c + dir.dc * i];
-              if (cell !== '' && cell !== entry.word[i]) {
+              const rr = r + dir.dr * i;
+              const cc = c + dir.dc * i;
+              if (grid[rr][cc] !== '') {
                 fits = false;
                 break;
               }
-              if (cell === entry.word[i]) {
-                overlapCount += 1;
-              }
+              cells.push({ r: rr, c: cc });
             }
+            if (!fits) continue;
 
-            // Avoid burying a shorter word (like LIEB) completely inside an already placed word
-            if (!fits || overlapCount === entry.word.length) continue;
+            const spread = measureSpreadScore(cells, occupiedCells);
+            // Lower weight is better: balance directions + maximize distance from existing words
+            const weight =
+              (dirUsage.get(dir.name) || 0) * 14 - spread * 2.5 + rng() * 3.5;
 
-            candidates.push({
-              r,
-              c,
-              dir,
-              // Prefer less-used directions for balanced horizontal/vertical/diagonal mix
-              weight: (dirUsage.get(dir.name) || 0) * 10 - (overlapCount === 1 ? 2 : 0) + rng() * 6,
-            });
+            candidates.push({ r, c, dir, cells, weight });
           }
         }
       }
@@ -86,13 +99,11 @@ export function generateWordSearch({ size = 15, words = [], seed = 20261201 }) {
 
       candidates.sort((a, b) => a.weight - b.weight);
       const chosen = candidates[0];
-      const cells = [];
 
       for (let i = 0; i < entry.word.length; i += 1) {
-        const rr = chosen.r + chosen.dir.dr * i;
-        const cc = chosen.c + chosen.dir.dc * i;
+        const { r: rr, c: cc } = chosen.cells[i];
         grid[rr][cc] = entry.word[i];
-        cells.push({ r: rr, c: cc });
+        occupiedCells.push({ r: rr, c: cc });
       }
 
       dirUsage.set(chosen.dir.name, (dirUsage.get(chosen.dir.name) || 0) + 1);
@@ -100,13 +111,22 @@ export function generateWordSearch({ size = 15, words = [], seed = 20261201 }) {
         word: entry.word,
         displayWord: entry.displayWord,
         direction: chosen.dir.name,
-        start: cells[0],
-        end: cells[cells.length - 1],
-        cells,
+        start: chosen.cells[0],
+        end: chosen.cells[chosen.cells.length - 1],
+        cells: chosen.cells,
       });
     }
 
     if (!failed) {
+      // Ensure words aren't clustered on just one side of the board
+      const leftSideCount = placements.filter(
+        (p) => (p.start.c + p.end.c) / 2 < size / 2
+      ).length;
+      const rightSideCount = placements.length - leftSideCount;
+      if (placements.length >= 4 && (leftSideCount < 2 || rightSideCount < 2)) {
+        continue;
+      }
+
       // Fill empty cells with weighted German filler letters
       for (let r = 0; r < size; r += 1) {
         for (let c = 0; c < size; c += 1) {
@@ -117,7 +137,6 @@ export function generateWordSearch({ size = 15, words = [], seed = 20261201 }) {
         }
       }
 
-      // Preserve original config word order in returned list
       const byWord = new Map(placements.map((p) => [p.word, p]));
       const orderedPlacements = normalizedList.map((e) => byWord.get(e.word));
 
@@ -125,7 +144,7 @@ export function generateWordSearch({ size = 15, words = [], seed = 20261201 }) {
     }
   }
 
-  throw new Error('Could not generate word search grid with the provided words.');
+  throw new Error('Could not generate non-overlapping word search grid.');
 }
 
 /**

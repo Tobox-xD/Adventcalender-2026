@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { PUZZLE_CONFIG } from '../../data/puzzles.js';
 import {
   createBrokenPathsPuzzle,
@@ -8,6 +8,7 @@ import {
 } from '../../lib/brokenPaths.js';
 
 const STORAGE_KEY = 'advent-2026-puzzle-6-state-v2';
+const DRAG_THRESHOLD_PX = 8;
 
 const puzzle = createBrokenPathsPuzzle(PUZZLE_CONFIG.brokenPaths);
 
@@ -20,9 +21,11 @@ const saved = loadSavedState();
 const placements = ref(saved.placements);
 // Map of tileId -> rotation (0..3)
 const rotations = ref({ ...initialRotations, ...saved.rotations });
-// Selected tile either in tray or on board: { source: 'tray', tileId } | { source: 'board', key, tileId }
-const selected = ref(null);
-const dragPayload = ref(null);
+
+// Active pointer drag state (supports both mouse and touch)
+const dragState = ref(null);
+const hoverSlotKey = ref(null);
+const hoverTray = ref(false);
 
 function loadSavedState() {
   try {
@@ -30,8 +33,14 @@ function loadSavedState() {
     if (!raw) return { placements: {}, rotations: {} };
     const parsed = JSON.parse(raw);
     return {
-      placements: parsed.placements && typeof parsed.placements === 'object' ? parsed.placements : {},
-      rotations: parsed.rotations && typeof parsed.rotations === 'object' ? parsed.rotations : {},
+      placements:
+        parsed.placements && typeof parsed.placements === 'object'
+          ? parsed.placements
+          : {},
+      rotations:
+        parsed.rotations && typeof parsed.rotations === 'object'
+          ? parsed.rotations
+          : {},
     };
   } catch {
     return { placements: {}, rotations: {} };
@@ -78,6 +87,16 @@ const evaluation = computed(() =>
   evaluateBrokenPaths(puzzle, resolvedPlacements.value)
 );
 
+const draggedTile = computed(() => {
+  if (!dragState.value?.hasMoved) return null;
+  const tile = tilesById[dragState.value.tileId];
+  if (!tile) return null;
+  return {
+    ...tile,
+    rotation: rotations.value[tile.id] ?? tile.initialRotation,
+  };
+});
+
 function rotateTile(tileId) {
   rotations.value = {
     ...rotations.value,
@@ -85,95 +104,116 @@ function rotateTile(tileId) {
   };
 }
 
-function placeTile(payload, targetKey) {
-  if (!payload) return;
+function placeTile(source, tileId, fromKey, targetKey) {
   const next = { ...placements.value };
 
-  if (payload.source === 'tray') {
-    next[targetKey] = payload.tileId;
-  } else if (payload.source === 'board') {
-    if (payload.key === targetKey) return;
+  if (source === 'tray') {
+    next[targetKey] = tileId;
+  } else if (source === 'board') {
+    if (fromKey === targetKey) return;
     const displaced = next[targetKey];
-    next[targetKey] = payload.tileId;
+    next[targetKey] = tileId;
     if (displaced) {
-      next[payload.key] = displaced;
+      next[fromKey] = displaced;
     } else {
-      delete next[payload.key];
+      delete next[fromKey];
     }
   }
 
   placements.value = next;
-  selected.value = null;
 }
 
 function removeFromSlot(key) {
   const next = { ...placements.value };
   delete next[key];
   placements.value = next;
-  selected.value = null;
 }
 
-function onSlotClick(r, c) {
-  const key = `${r},${c}`;
-  const currentTileId = placements.value[key];
+function startPointerDrag(source, tileId, fromKey, event) {
+  if (event.button && event.button !== 0) return;
+  event.preventDefault();
 
-  if (selected.value) {
-    if (selected.value.source === 'board' && selected.value.key === key) {
-      // Clicking the already-selected placed tile rotates it 90 degrees!
-      rotateTile(currentTileId);
-      return;
-    }
-    placeTile(selected.value, key);
+  dragState.value = {
+    source,
+    tileId,
+    fromKey,
+    startX: event.clientX,
+    startY: event.clientY,
+    x: event.clientX,
+    y: event.clientY,
+    hasMoved: false,
+  };
+}
+
+function handlePointerMove(event) {
+  if (!dragState.value) return;
+  const dx = event.clientX - dragState.value.startX;
+  const dy = event.clientY - dragState.value.startY;
+  const hasMoved =
+    dragState.value.hasMoved || Math.hypot(dx, dy) >= DRAG_THRESHOLD_PX;
+
+  dragState.value = {
+    ...dragState.value,
+    x: event.clientX,
+    y: event.clientY,
+    hasMoved,
+  };
+
+  if (!hasMoved) return;
+
+  const targetEl = document.elementFromPoint(event.clientX, event.clientY);
+  const slotEl = targetEl?.closest?.('[data-bp-slot]');
+  const trayEl = targetEl?.closest?.('[data-bp-tray]');
+
+  hoverSlotKey.value = slotEl ? slotEl.dataset.bpSlot : null;
+  hoverTray.value = Boolean(!slotEl && trayEl && dragState.value.source === 'board');
+}
+
+function handlePointerUp(event) {
+  const state = dragState.value;
+  if (!state) return;
+
+  dragState.value = null;
+  hoverSlotKey.value = null;
+  hoverTray.value = false;
+
+  // Tap / click without dragging -> rotate 90° clockwise
+  if (!state.hasMoved) {
+    rotateTile(state.tileId);
     return;
   }
 
-  if (currentTileId) {
-    selected.value = { source: 'board', key, tileId: currentTileId };
-  }
-}
-
-function onTrayTileClick(tileId) {
-  if (selected.value?.source === 'board') {
-    removeFromSlot(selected.value.key);
+  // Dropped after dragging -> check drop target
+  const targetEl = document.elementFromPoint(event.clientX, event.clientY);
+  const slotEl = targetEl?.closest?.('[data-bp-slot]');
+  if (slotEl?.dataset.bpSlot) {
+    placeTile(state.source, state.tileId, state.fromKey, slotEl.dataset.bpSlot);
     return;
   }
-  if (selected.value?.source === 'tray' && selected.value.tileId === tileId) {
-    rotateTile(tileId);
-    return;
+
+  const trayEl = targetEl?.closest?.('[data-bp-tray]');
+  if (trayEl && state.source === 'board' && state.fromKey) {
+    removeFromSlot(state.fromKey);
   }
-  selected.value = { source: 'tray', tileId };
-}
-
-function onDragStartTray(tileId, event) {
-  dragPayload.value = { source: 'tray', tileId };
-  event.dataTransfer?.setData('text/plain', `tray:${tileId}`);
-}
-
-function onDragStartBoard(key, event) {
-  const tileId = placements.value[key];
-  if (!tileId) return;
-  dragPayload.value = { source: 'board', key, tileId };
-  event.dataTransfer?.setData('text/plain', `board:${key}:${tileId}`);
-}
-
-function onDropSlot(r, c) {
-  if (!dragPayload.value) return;
-  placeTile(dragPayload.value, `${r},${c}`);
-  dragPayload.value = null;
-}
-
-function onDropTray() {
-  if (dragPayload.value?.source === 'board') {
-    removeFromSlot(dragPayload.value.key);
-  }
-  dragPayload.value = null;
 }
 
 function resetPuzzle() {
   placements.value = {};
   rotations.value = { ...initialRotations };
-  selected.value = null;
+  dragState.value = null;
 }
+
+onMounted(() => {
+  window.addEventListener('pointermove', handlePointerMove);
+  window.addEventListener('pointerup', handlePointerUp);
+  window.addEventListener('pointercancel', handlePointerUp);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('pointermove', handlePointerMove);
+  window.removeEventListener('pointerup', handlePointerUp);
+  window.removeEventListener('pointercancel', handlePointerUp);
+});
 
 // SVG path geometry helper for any tile type + rotation in a 100x100 viewBox
 const EDGE_MID = {
@@ -196,7 +236,6 @@ function getTileRenderData(type, rotation) {
   const stubs = [];
 
   if (def.isOverpass) {
-    // Draw horizontal/vertical overpass cleanly: first track underneath with center gap, second on top
     const [under, over] = def.pairs;
     const [u1, u2] = under;
     const [o1, o2] = over;
@@ -205,7 +244,6 @@ function getTileRenderData(type, rotation) {
     const [ox1, oy1] = EDGE_MID[o1];
     const [ox2, oy2] = EDGE_MID[o2];
 
-    // Underpass split into two segments with gap around center
     const gap1x = ux1 + (50 - ux1) * 0.64;
     const gap1y = uy1 + (50 - uy1) * 0.64;
     const gap2x = ux2 + (50 - ux2) * 0.64;
@@ -229,7 +267,6 @@ function getTileRenderData(type, rotation) {
         if (isOpposite) {
           paths.push({ d: `M ${ax} ${ay} L ${bx} ${by}`, layer: 'normal' });
         } else {
-          // Smooth quadratic curve around center for corners & double-corners
           paths.push({ d: `M ${ax} ${ay} Q 50 50 ${bx} ${by}`, layer: 'normal' });
         }
       } else if (group.length === 3) {
@@ -265,13 +302,10 @@ function getTileRenderData(type, rotation) {
     </div>
 
     <p class="puzzle-hint">
-      Ziehe die passenden Wegteile in die leeren Felder (oder tippe Teil → Feld). Ein weiterer Klick auf ein ausgewähltes Teil dreht es um 90°. Achtung: Manche Wege kreuzen sich nur als Brücke oder führen in Sackgassen!
+      Ziehe die Wegteile per Drag-and-Drop in die leeren Felder (oder zurück in die Ablage). Tippe bzw. klicke auf ein Teil, um es um 90° zu drehen. Achtung: Manche Wege kreuzen sich nur als Brücke oder führen in Sackgassen!
     </p>
 
-    <div
-      class="bp-board"
-      :style="{ '--bp-cols': puzzle.cols }"
-    >
+    <div class="bp-board" :style="{ '--bp-cols': puzzle.cols }">
       <template v-for="(row, r) in puzzle.grid" :key="`bp-row-${r}`">
         <div
           v-for="(cell, c) in row"
@@ -282,23 +316,20 @@ function getTileRenderData(type, rotation) {
             'is-fixed': cell.kind === 'fixed',
             'is-slot': cell.kind === 'slot',
             'is-filled': cell.kind === 'slot' && Boolean(placements[`${r},${c}`]),
-            'is-selected':
-              selected?.source === 'board' && selected.key === `${r},${c}`,
+            'is-drop-hover': cell.kind === 'slot' && hoverSlotKey === `${r},${c}`,
+            'is-dragging-source':
+              dragState?.hasMoved &&
+              dragState.source === 'board' &&
+              dragState.fromKey === `${r},${c}`,
             'is-on-solution': evaluation.pathCells.has(`${r},${c}`),
             'is-mismatched': evaluation.mismatchedSlots.has(`${r},${c}`),
           }"
-          :draggable="cell.kind === 'slot' && Boolean(placements[`${r},${c}`])"
-          @click="cell.kind === 'slot' && onSlotClick(r, c)"
-          @contextmenu.prevent="
+          :data-bp-slot="cell.kind === 'slot' ? `${r},${c}` : null"
+          @pointerdown="
             cell.kind === 'slot' &&
               placements[`${r},${c}`] &&
-              rotateTile(placements[`${r},${c}`])
+              startPointerDrag('board', placements[`${r},${c}`], `${r},${c}`, $event)
           "
-          @dragstart="
-            cell.kind === 'slot' && onDragStartBoard(`${r},${c}`, $event)
-          "
-          @dragover.prevent="cell.kind === 'slot'"
-          @drop.prevent="cell.kind === 'slot' && onDropSlot(r, c)"
         >
           <!-- Fixed board tiles -->
           <template v-if="cell.kind === 'fixed'">
@@ -315,7 +346,11 @@ function getTileRenderData(type, rotation) {
               >
                 <path :d="s.d" class="bp-track" />
                 <circle
-                  v-if="cell.type === 'deadend' || cell.type === 'blockedCorner' || cell.type === 'blockedStraight'"
+                  v-if="
+                    cell.type === 'deadend' ||
+                    cell.type === 'blockedCorner' ||
+                    cell.type === 'blockedStraight'
+                  "
                   :cx="s.cx"
                   :cy="s.cy"
                   r="8"
@@ -362,29 +397,6 @@ function getTileRenderData(type, rotation) {
       </template>
     </div>
 
-    <div v-if="selected" class="bp-selected-bar">
-      <span>
-        Ausgewählt: Teil <strong>{{ tilesById[selected.tileId]?.letter }}</strong>
-      </span>
-      <div class="bp-selected-actions">
-        <button
-          type="button"
-          class="puzzle-btn-inline"
-          @click="rotateTile(selected.tileId)"
-        >
-          ↻ 90° drehen
-        </button>
-        <button
-          v-if="selected.source === 'board'"
-          type="button"
-          class="puzzle-btn-inline"
-          @click="removeFromSlot(selected.key)"
-        >
-          Entfernen
-        </button>
-      </div>
-    </div>
-
     <div v-if="evaluation.solved" class="puzzle-solved">
       Helmut ist sicher zuhause angekommen! Lösungswort:
       <strong>{{ evaluation.collectedWord }}</strong>
@@ -392,8 +404,8 @@ function getTileRenderData(type, rotation) {
 
     <div
       class="bp-tray-wrap"
-      @dragover.prevent
-      @drop.prevent="onDropTray"
+      :class="{ 'is-drop-hover': hoverTray }"
+      data-bp-tray
     >
       <span class="tray-label">Verfügbare Wegteile ({{ trayTiles.length }})</span>
       <div class="bp-tray">
@@ -402,13 +414,12 @@ function getTileRenderData(type, rotation) {
           :key="tile.id"
           class="bp-tray-item"
           :class="{
-            'is-selected':
-              selected?.source === 'tray' && selected.tileId === tile.id,
+            'is-dragging-source':
+              dragState?.hasMoved &&
+              dragState.source === 'tray' &&
+              dragState.tileId === tile.id,
           }"
-          draggable="true"
-          @click="onTrayTileClick(tile.id)"
-          @contextmenu.prevent="rotateTile(tile.id)"
-          @dragstart="onDragStartTray(tile.id, $event)"
+          @pointerdown="startPointerDrag('tray', tile.id, null, $event)"
         >
           <svg class="bp-svg" viewBox="0 0 100 100" aria-hidden="true">
             <template
@@ -432,16 +443,39 @@ function getTileRenderData(type, rotation) {
             </template>
           </svg>
           <span class="bp-tile-letter">{{ tile.letter }}</span>
-          <button
-            type="button"
-            class="bp-rotate-mini"
-            title="Um 90° drehen"
-            @click.stop="rotateTile(tile.id)"
-          >
-            ↻
-          </button>
         </div>
       </div>
+    </div>
+
+    <!-- Floating ghost while dragging -->
+    <div
+      v-if="draggedTile"
+      class="bp-drag-ghost"
+      :style="{ left: `${dragState.x}px`, top: `${dragState.y}px` }"
+      aria-hidden="true"
+    >
+      <svg class="bp-svg" viewBox="0 0 100 100">
+        <template
+          v-for="(p, idx) in getTileRenderData(
+            draggedTile.type,
+            draggedTile.rotation
+          ).paths"
+          :key="`gp-${idx}`"
+        >
+          <path :d="p.d" class="bp-track is-placed" :class="`layer-${p.layer}`" />
+        </template>
+        <template
+          v-for="(s, idx) in getTileRenderData(
+            draggedTile.type,
+            draggedTile.rotation
+          ).stubs"
+          :key="`gs-${idx}`"
+        >
+          <path :d="s.d" class="bp-track is-placed" />
+          <circle :cx="s.cx" :cy="s.cy" r="7" class="bp-cap" />
+        </template>
+      </svg>
+      <span class="bp-tile-letter">{{ draggedTile.letter }}</span>
     </div>
 
     <div class="puzzle-actions">

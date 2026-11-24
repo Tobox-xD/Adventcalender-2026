@@ -22,23 +22,19 @@ import {
   PORT_DELTA,
 } from '../src/lib/brokenPaths.js';
 
-test('Station 1: 15x15 word search places all 10 words forward/diagonally', () => {
+test('Station 1: 13x13 word search places all 6 words forward/diagonally', () => {
   const words = [
     'Maubs',
     'Liebhabelung',
     'Kitzelattacke',
-    'Lieb',
-    'Winter',
-    'Schnee',
     'Kuscheln',
-    'Advent',
     'Freude',
     'Schnuffel',
   ];
 
-  const ws = generateWordSearch({ size: 15, words, seed: 20261201 });
-  assert.equal(ws.size, 15);
-  assert.equal(ws.grid.length, 15);
+  const ws = generateWordSearch({ size: 13, words, seed: 20261201 });
+  assert.equal(ws.size, 13);
+  assert.equal(ws.grid.length, 13);
   assert.equal(ws.placements.length, words.length);
 
   const forwardNames = new Set(FORWARD_DIRECTIONS.map((d) => d.name));
@@ -56,14 +52,20 @@ test('Station 1: 15x15 word search places all 10 words forward/diagonally', () =
 
   assert.ok(diagonalCount >= 2, 'Expected at least 2 diagonal placements');
 
-  // Ensure LIEB is not completely buried inside LIEBHABELUNG
-  const lieb = ws.placements.find((p) => p.word === normalizeWord('Lieb'));
-  const liebhabelung = ws.placements.find(
-    (p) => p.word === normalizeWord('Liebhabelung')
-  );
-  const longSet = new Set(liebhabelung.cells.map((c) => `${c.r},${c.c}`));
-  const allInsideLong = lieb.cells.every((c) => longSet.has(`${c.r},${c.c}`));
-  assert.equal(allInsideLong, false, 'LIEB must have its own distinct cells');
+  // Verify zero overlapping cells between words
+  const seenCells = new Set();
+  for (const p of ws.placements) {
+    for (const cell of p.cells) {
+      const key = `${cell.r},${cell.c}`;
+      assert.equal(seenCells.has(key), false, `Overlapping cell at ${key}`);
+      seenCells.add(key);
+    }
+  }
+
+  // Verify words are balanced across left and right halves
+  const leftCount = ws.placements.filter((p) => (p.start.c + p.end.c) / 2 < ws.size / 2).length;
+  const rightCount = ws.placements.length - leftCount;
+  assert.ok(leftCount >= 2 && rightCount >= 2, `Expected balanced spread, got L=${leftCount} R=${rightCount}`);
 });
 
 test('Station 3: Harder 19x19 maze places exact 20-letter phrase on turns with deep dead ends', () => {
