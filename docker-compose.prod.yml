@@ -1,0 +1,16 @@
+services:
+  web:
+    image: ghcr.io/tobox-xd/advent-calendar-2026:latest
+    expose:
+      - "80"
+    networks:
+      default:
+      proxy:
+        aliases:
+          - advent-calendar-2026-web
+    restart: unless-stopped
+
+networks:
+  default:
+  proxy:
+    external: true
