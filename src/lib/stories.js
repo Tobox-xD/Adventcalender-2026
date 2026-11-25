@@ -4,8 +4,8 @@ import storyMarkdown from '../../Geschichte.md?raw';
 const CALENDAR_YEAR = 2026;
 const CALENDAR_MONTH_INDEX = 11; // December (0-indexed)
 const UNLOCK_DAYS = [1, 4, 7, 10, 13, 16, 20, 24];
-// Set VITE_ENFORCE_UNLOCK_DATES=true when you want date-locking active
-const ENFORCE_UNLOCK_DATES = import.meta.env.VITE_ENFORCE_UNLOCK_DATES === 'true';
+// Date-locking is active by default; set VITE_ENFORCE_UNLOCK_DATES=false to disable
+const ENFORCE_UNLOCK_DATES = import.meta.env.VITE_ENFORCE_UNLOCK_DATES !== 'false';
 
 // Optional audio files: drop e.g. src/content/audio/01.mp3 (or .m4a, .ogg, .wav)
 const audioModules = import.meta.glob('../content/audio/*.{mp3,m4a,ogg,wav}', {

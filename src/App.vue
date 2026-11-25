@@ -147,7 +147,12 @@ function handleDebugRevealChange(event) {
 
 function stepDebugReveal(delta) {
   const current =
-    debugRevealDay.value === null ? maxStoryDay.value : debugRevealDay.value;
+    debugRevealDay.value === null
+      ? stories.reduce(
+          (max, s) => (isDayUnlocked(s) ? Math.max(max, s.day) : max),
+          0
+        )
+      : debugRevealDay.value;
   debugRevealDay.value = Math.min(
     maxStoryDay.value,
     Math.max(0, current + delta)
