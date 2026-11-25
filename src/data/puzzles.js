@@ -25,7 +25,14 @@ const fallbackPictures = import.meta.glob(
 export function getBagPuzzleImageUrl() {
   const dedicated = Object.values(puzzlePictures)[0];
   if (dedicated) return dedicated;
-  return Object.values(fallbackPictures)[0] || null;
+
+  const entries = Object.entries(fallbackPictures).filter(
+    ([path]) => !/\/cursor[^/]*$/i.test(path)
+  );
+  const dayTwo = entries.find(([path]) => /\/0?2\.[^.]+$/.test(path));
+  if (dayTwo) return dayTwo[1];
+
+  return entries[0]?.[1] || null;
 }
 
 export const PUZZLE_CONFIG = {

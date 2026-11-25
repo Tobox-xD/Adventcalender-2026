@@ -47,6 +47,7 @@ function buildPictureLookup() {
   let placeholder = null;
 
   for (const [path, url] of Object.entries(pictureModules)) {
+    if (/\/cursor[^/]*$/i.test(path)) continue;
     const numberedMatch = path.match(/\/(\d+)\.[^.]+$/);
     if (numberedMatch) {
       const day = Number.parseInt(numberedMatch[1], 10);
