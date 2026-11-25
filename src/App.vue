@@ -1,5 +1,5 @@
 <script setup>
-import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import StoryPath from './components/StoryPath.vue';
 import StoryView from './components/StoryView.vue';
 import { isDayUnlocked, loadStories } from './lib/stories.js';
@@ -13,10 +13,20 @@ const lastVisitedDay = ref(null);
 const openedFromPath = ref(false);
 const hasAccess = ref(!expectedPassword);
 
+// Temporary debug override: null = real date rules, 0..maxDay = reveal up to that day
+const debugRevealDay = ref(null);
+const maxStoryDay = computed(() =>
+  stories.reduce((max, s) => Math.max(max, s.day), 0)
+);
+
+function isStoryRevealed(story) {
+  return isDayUnlocked(story, { maxRevealedDay: debugRevealDay.value });
+}
+
 function findUnlockedStoryByDay(day) {
   if (!Number.isInteger(day)) return null;
   const match = stories.find((s) => s.day === day);
-  return match && isDayUnlocked(match) ? match : null;
+  return match && isStoryRevealed(match) ? match : null;
 }
 
 function getDayFromUrl() {
@@ -119,7 +129,7 @@ onBeforeUnmount(() => {
 });
 
 function handleSelectStory(story) {
-  if (!isDayUnlocked(story)) return;
+  if (!isStoryRevealed(story)) return;
   lastVisitedDay.value = story.day;
   openedFromPath.value = true;
   selectedStory.value = story;
@@ -129,6 +139,26 @@ function handleSelectStory(story) {
   window.history.pushState({ day: story.day }, '', targetUrl);
   window.scrollTo({ top: 0, behavior: 'instant' });
 }
+
+function handleDebugRevealChange(event) {
+  const raw = event.target.value;
+  debugRevealDay.value = raw === '' ? null : Number.parseInt(raw, 10);
+}
+
+function stepDebugReveal(delta) {
+  const current =
+    debugRevealDay.value === null ? maxStoryDay.value : debugRevealDay.value;
+  debugRevealDay.value = Math.min(
+    maxStoryDay.value,
+    Math.max(0, current + delta)
+  );
+}
+
+watch(debugRevealDay, () => {
+  if (selectedStory.value && !isStoryRevealed(selectedStory.value)) {
+    handleBackToPath();
+  }
+});
 
 function handleBackToPath() {
   const returnDay = selectedStory.value?.day || lastVisitedDay.value;
@@ -163,7 +193,43 @@ function handleBackToPath() {
     <StoryPath
       v-else
       :stories="stories"
+      :debug-reveal-day="debugRevealDay"
       @select="handleSelectStory"
     />
+
+    <aside class="debug-reveal-bar" aria-label="Temporary reveal debug controls">
+      <span class="debug-reveal-badge">DEBUG</span>
+      <label class="debug-reveal-label" for="debug-reveal-select">Reveal</label>
+      <button
+        type="button"
+        class="debug-reveal-step"
+        :disabled="debugRevealDay === 0"
+        aria-label="Reveal one fewer chapter"
+        @click="stepDebugReveal(-1)"
+      >
+        −
+      </button>
+      <select
+        id="debug-reveal-select"
+        class="debug-reveal-select"
+        :value="debugRevealDay === null ? '' : String(debugRevealDay)"
+        @change="handleDebugRevealChange"
+      >
+        <option value="">Real date</option>
+        <option value="0">0 (None)</option>
+        <option v-for="story in stories" :key="story.day" :value="String(story.day)">
+          {{ story.day }} — {{ story.title }}
+        </option>
+      </select>
+      <button
+        type="button"
+        class="debug-reveal-step"
+        :disabled="debugRevealDay === maxStoryDay"
+        aria-label="Reveal one more chapter"
+        @click="stepDebugReveal(1)"
+      >
+        +
+      </button>
+    </aside>
   </main>
 </template>

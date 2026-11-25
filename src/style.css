@@ -244,15 +244,83 @@ body {
 .polaroid-card:disabled {
   cursor: not-allowed;
   background: #d8d5ce;
-  opacity: 0.8;
+  opacity: 0.88;
 }
 
 .polaroid-card:disabled .polaroid-photo img {
-  filter: grayscale(1) brightness(0.45) blur(3px);
+  image-rendering: pixelated;
 }
 
 .trail-stop.locked .polaroid-title {
   color: #525d64;
+  letter-spacing: 0.04em;
+}
+
+/* Temporary debug reveal selector */
+.debug-reveal-bar {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.65rem;
+  background: rgba(23, 32, 40, 0.94);
+  border: 1.5px solid var(--warm-accent);
+  border-radius: 10px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
+  font-family: system-ui, sans-serif;
+  font-size: 0.82rem;
+  color: var(--ink);
+  backdrop-filter: blur(6px);
+}
+
+.debug-reveal-badge {
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  background: var(--warm-accent);
+  color: #131a21;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.debug-reveal-label {
+  color: var(--muted);
+}
+
+.debug-reveal-select {
+  max-width: 12.5rem;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--frost-border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+}
+
+.debug-reveal-step {
+  width: 1.65rem;
+  height: 1.65rem;
+  padding: 0;
+  border: 1px solid var(--frost-border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--pine);
+  font: inherit;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.debug-reveal-step:hover:not(:disabled) {
+  border-color: var(--pine-soft);
+}
+
+.debug-reveal-step:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 /* Story detail view */

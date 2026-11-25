@@ -3,6 +3,7 @@ import storyMarkdown from '../../Geschichte.md?raw';
 
 const CALENDAR_YEAR = 2026;
 const CALENDAR_MONTH_INDEX = 11; // December (0-indexed)
+const UNLOCK_DAYS = [1, 4, 7, 10, 13, 16, 20, 24];
 // Set VITE_ENFORCE_UNLOCK_DATES=true when you want date-locking active
 const ENFORCE_UNLOCK_DATES = import.meta.env.VITE_ENFORCE_UNLOCK_DATES === 'true';
 
@@ -47,7 +48,7 @@ function buildPictureLookup() {
   let placeholder = null;
 
   for (const [path, url] of Object.entries(pictureModules)) {
-    if (/\/cursor[^/]*$/i.test(path)) continue;
+    if (/\/(cursor|lock)[^/]*$/i.test(path)) continue;
     const numberedMatch = path.match(/\/(\d+)\.[^.]+$/);
     if (numberedMatch) {
       const day = Number.parseInt(numberedMatch[1], 10);
@@ -83,6 +84,8 @@ function parseChapters(markdown) {
 
       const fullMarkdown = `# ${title}\n\n${body}`;
 
+      const unlockDayOfMonth = UNLOCK_DAYS[day - 1] ?? day;
+
       return {
         day,
         title: title || `Kapitel ${day}`,
@@ -90,7 +93,14 @@ function parseChapters(markdown) {
         html: marked.parse(fullMarkdown, { breaks: true }),
         audioUrl: audioMap.get(day) || placeholderAudio,
         imageUrl: pictureMap.get(day) || placeholderPicture,
-        unlockDate: new Date(CALENDAR_YEAR, CALENDAR_MONTH_INDEX, day, 0, 0, 0),
+        unlockDate: new Date(
+          CALENDAR_YEAR,
+          CALENDAR_MONTH_INDEX,
+          unlockDayOfMonth,
+          0,
+          0,
+          0
+        ),
       };
     })
     .sort((a, b) => a.day - b.day);
@@ -100,7 +110,33 @@ export function loadStories() {
   return parseChapters(storyMarkdown);
 }
 
-export function isDayUnlocked(story, now = new Date()) {
+const LOCKED_TITLE_SYMBOLS = '!§$=)?_-/#+*&%~';
+
+export function scrambleTitle(title, seed = 1) {
+  let state = (seed * 2654435761) >>> 0;
+  let result = '';
+
+  for (let i = 0; i < title.length; i += 1) {
+    const ch = title[i];
+    if (/\s/.test(ch)) {
+      result += ch;
+      continue;
+    }
+    state = (Math.imul(state, 1664525) + 1013904223 + i) >>> 0;
+    result += LOCKED_TITLE_SYMBOLS[state % LOCKED_TITLE_SYMBOLS.length];
+  }
+
+  return result;
+}
+
+export function isDayUnlocked(story, options = {}) {
+  const { now = new Date(), maxRevealedDay = null } =
+    options instanceof Date ? { now: options } : options;
+
+  if (Number.isInteger(maxRevealedDay)) {
+    return story.day <= maxRevealedDay;
+  }
+
   if (!ENFORCE_UNLOCK_DATES || import.meta.env.VITE_UNLOCK_ALL === 'true') {
     return true;
   }

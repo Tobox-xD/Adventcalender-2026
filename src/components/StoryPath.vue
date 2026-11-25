@@ -1,18 +1,31 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
-import { formatShortDate, isDayUnlocked } from '../lib/stories.js';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import {
+  formatShortDate,
+  isDayUnlocked,
+  scrambleTitle,
+} from '../lib/stories.js';
 import { removeBlackBackground } from '../lib/spriteTransparency.js';
 import cursor1RawUrl from '../content/pictures/cursor1.jpeg';
 import cursor2RawUrl from '../content/pictures/cursor2.jpeg';
+import lockImgUrl from '../content/pictures/lock.jpeg';
 
 const props = defineProps({
   stories: {
     type: Array,
     required: true,
   },
+  debugRevealDay: {
+    type: Number,
+    default: null,
+  },
 });
 
 const emit = defineEmits(['select']);
+
+function isRevealed(story) {
+  return isDayUnlocked(story, { maxRevealedDay: props.debugRevealDay });
+}
 
 const SVG_WIDTH = 800;
 const TOP_PAD = 185;
@@ -126,8 +139,22 @@ const withCompanion = computed(() => {
   return cursorY.value >= day5.y - 24 && cursorY.value <= day6.y + 40;
 });
 
+const lastRevealedPoint = computed(() => {
+  let last = null;
+  for (const pt of points.value) {
+    if (isRevealed(pt.story)) {
+      last = pt;
+    }
+  }
+  return last;
+});
+
 const activeCursorSrc = computed(() =>
   withCompanion.value ? cursor2Src.value : cursor1Src.value
+);
+
+const showCursor = computed(() =>
+  Boolean(activeCursorSrc.value && lastRevealedPoint.value)
 );
 
 function evalCubic(a, b, c, d, t) {
@@ -191,7 +218,8 @@ let rafId = null;
 function computeTargetY() {
   const el = trailRef.value;
   const pts = points.value;
-  if (!el || pts.length === 0) return TOP_PAD;
+  const lastPt = lastRevealedPoint.value;
+  if (!el || pts.length === 0 || !lastPt) return TOP_PAD;
 
   const rect = el.getBoundingClientRect();
   const maxScroll = Math.max(
@@ -203,7 +231,7 @@ function computeTargetY() {
   const anchorRatio = 0.22 + progress * 0.56;
   const rawY = window.innerHeight * anchorRatio - rect.top;
 
-  return Math.min(pts[pts.length - 1].y, Math.max(pts[0].y, rawY));
+  return Math.min(lastPt.y, Math.max(pts[0].y, rawY));
 }
 
 function applyCursorAtY(y) {
@@ -240,10 +268,23 @@ function handleScrollOrResize() {
 }
 
 function snapCursorToScroll() {
+  if (!lastRevealedPoint.value) return;
   targetY = computeTargetY();
   currentY = targetY;
   applyCursorAtY(currentY);
 }
+
+watch(lastRevealedPoint, (nextPt, prevPt) => {
+  if (!nextPt) return;
+  if (!prevPt) {
+    snapCursorToScroll();
+    return;
+  }
+  targetY = computeTargetY();
+  if (rafId === null) {
+    rafId = requestAnimationFrame(stepCursor);
+  }
+});
 
 onMounted(async () => {
   snapCursorToScroll();
@@ -307,7 +348,7 @@ onBeforeUnmount(() => {
     </svg>
 
     <div
-      v-if="activeCursorSrc"
+      v-if="showCursor"
       class="trail-cursor"
       :class="{ 'facing-right': facingRight }"
       :style="{ left: `${cursorXPercent}%`, top: `${cursorY}px` }"
@@ -325,20 +366,20 @@ onBeforeUnmount(() => {
         :class="[
           `card-${pt.side}`,
           `sketch-v${(pt.index % 4) + 1}`,
-          { locked: !isDayUnlocked(pt.story) },
+          { locked: !isRevealed(pt.story) },
         ]"
         :style="{ left: `${pt.xPercent}%`, top: `${pt.y}px` }"
       >
         <button
           type="button"
           class="waypoint"
-          :disabled="!isDayUnlocked(pt.story)"
+          :disabled="!isRevealed(pt.story)"
           :aria-label="
-            isDayUnlocked(pt.story)
+            isRevealed(pt.story)
               ? `Kapitel ${pt.story.day}: ${pt.story.title}`
               : `Kapitel ${pt.story.day} (gesperrt)`
           "
-          @click="emit('select', pt.story)"
+          @click="isRevealed(pt.story) && emit('select', pt.story)"
         >
           {{ pt.story.day }}
         </button>
@@ -346,20 +387,24 @@ onBeforeUnmount(() => {
         <button
           type="button"
           class="polaroid-card"
-          :disabled="!isDayUnlocked(pt.story)"
-          @click="emit('select', pt.story)"
+          :disabled="!isRevealed(pt.story)"
+          @click="isRevealed(pt.story) && emit('select', pt.story)"
         >
           <span class="polaroid-photo">
             <img
-              v-if="pt.story.imageUrl"
-              :src="pt.story.imageUrl"
-              :alt="isDayUnlocked(pt.story) ? pt.story.title : `Kapitel ${pt.story.day}`"
+              v-if="isRevealed(pt.story) ? pt.story.imageUrl : lockImgUrl"
+              :src="isRevealed(pt.story) ? pt.story.imageUrl : lockImgUrl"
+              :alt="isRevealed(pt.story) ? pt.story.title : `Kapitel ${pt.story.day} (gesperrt)`"
               loading="lazy"
             />
           </span>
           <span class="polaroid-caption">
             <span class="polaroid-title">
-              {{ isDayUnlocked(pt.story) ? pt.story.title : `Kapitel ${pt.story.day}` }}
+              {{
+                isRevealed(pt.story)
+                  ? pt.story.title
+                  : scrambleTitle(pt.story.title, pt.story.day)
+              }}
             </span>
           </span>
           <span class="polaroid-date">
