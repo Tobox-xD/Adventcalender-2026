@@ -5,6 +5,7 @@ import StoryView from './components/StoryView.vue';
 import { isDayUnlocked, loadStories } from './lib/stories.js';
 
 const STORAGE_KEY = 'advent-2026-access-pw';
+const DEBUG_STORAGE_KEY = 'advent-2026-debug';
 const expectedPassword = (import.meta.env.VITE_ACCESS_PW || '').trim();
 
 const stories = loadStories();
@@ -13,7 +14,8 @@ const lastVisitedDay = ref(null);
 const openedFromPath = ref(false);
 const hasAccess = ref(!expectedPassword);
 
-// Temporary debug override: null = real date rules, 0..maxDay = reveal up to that day
+// Debug override (hidden unless localStorage['advent-2026-debug'] is 'true' or '1')
+const showDebugBar = ref(false);
 const debugRevealDay = ref(null);
 const maxStoryDay = computed(() =>
   stories.reduce((max, s) => Math.max(max, s.day), 0)
@@ -101,10 +103,21 @@ function checkAccess() {
   return false;
 }
 
+function checkDebugFlag() {
+  try {
+    const val = localStorage.getItem(DEBUG_STORAGE_KEY);
+    showDebugBar.value = val === 'true' || val === '1';
+  } catch {
+    showDebugBar.value = false;
+  }
+}
+
 onMounted(() => {
   if ('scrollRestoration' in window.history) {
     window.history.scrollRestoration = 'manual';
   }
+
+  checkDebugFlag();
 
   const allowed = checkAccess();
   if (!allowed) {
@@ -202,7 +215,11 @@ function handleBackToPath() {
       @select="handleSelectStory"
     />
 
-    <aside class="debug-reveal-bar" aria-label="Temporary reveal debug controls">
+    <aside
+      v-if="showDebugBar"
+      class="debug-reveal-bar"
+      aria-label="Temporary reveal debug controls"
+    >
       <span class="debug-reveal-badge">DEBUG</span>
       <label class="debug-reveal-label" for="debug-reveal-select">Reveal</label>
       <button
